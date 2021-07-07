@@ -11,6 +11,7 @@ plt.rcParams['image.cmap'] = 'gray'
 
 
 env = gym.make('MiniGrid-Empty-5x5-v0')
+env = FlatObsWrapper(env)
 env.reset()
 before_img = env.render('rgb_array')
 
@@ -20,7 +21,7 @@ obs, reward, done, info = env.step(action)
 after_img = env.render('rgb_array')
 
 plt.imshow(np.concatenate([before_img, after_img], 1))
-
+plt.show()
 
 # for i in range(100):
 #     action = env.action_space

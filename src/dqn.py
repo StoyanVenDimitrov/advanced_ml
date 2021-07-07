@@ -1,3 +1,4 @@
+from numpy.lib.function_base import select
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -18,3 +19,8 @@ class DQN(nn.Module):
     
     def forward(self, state):
         return self.main(state.float())
+
+    # def train(self):
+    #     q_curr = self.forward(state)
+    #     q_next = self.forward(next_state)
+    #     delta = q_curr - (r + q_next)
