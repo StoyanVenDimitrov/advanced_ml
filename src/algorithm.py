@@ -62,8 +62,9 @@ target_net = DQN(n_actions)
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
 
-optimizer = optim.RMSprop(policy_net.parameters())
+optimizer = optim.Adam(policy_net.parameters())
 criterion = nn.SmoothL1Loss()
+# optimizer = optim.RMSprop(policy_net.parameters())
 #! optimizer = optim.SGD(policy_net.parameters(), lr=0.001, momentum=0.9)
 #! criterion = nn.CrossEntropyLoss()
 
