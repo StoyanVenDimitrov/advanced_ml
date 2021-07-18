@@ -22,6 +22,7 @@ is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython:
     from IPython import display
 
+ENV = "MiniGrid-Empty-8x8-v0" # 'MiniGrid-Empty-5x5-v0'
 NUM_EPISODES = 300
 BATCH_SIZE = 64
 GAMMA = 0.999
@@ -32,7 +33,7 @@ TARGET_UPDATE = 1
 HIDDEN_STATES = 100
 MEMORY_SIZE = 10000
 
-env = gym.make('MiniGrid-Empty-5x5-v0').unwrapped
+env = gym.make(ENV).unwrapped
 
 n_actions = env.action_space.n
 n_actions = 3
@@ -47,24 +48,15 @@ n_actions = 3
 env.reset()
 
 memory = ReplayMemory(MEMORY_SIZE)
-# resize = T.Compose([T.ToPILImage(), T.Resize(40, interpolation=Image.CUBIC), T.ToTensor()])
-# def get_screen(obs):
-#     screen = env.render(mode='rgb_array').transpose((2, 0, 1))
-#     screen = np.ascontiguousarray(screen, dtype=np.float32) / 255
-#     screen = torch.from_numpy(screen)
-#     screen = resize(screen).unsqueeze(0) # make 40x40 pictures from 160x160
-#     return screen
-# obs = env.reset()
-# init_screen = get_screen(obs)
-# _,_,screen_height, screen_width= init_screen.shape
+
 policy_net = DQN(n_actions)
 target_net = DQN(n_actions)
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
 
-optimizer = optim.Adam(policy_net.parameters())
+# optimizer = optim.Adam(policy_net.parameters())
 criterion = nn.SmoothL1Loss()
-# optimizer = optim.RMSprop(policy_net.parameters())
+optimizer = optim.RMSprop(policy_net.parameters())
 #! optimizer = optim.SGD(policy_net.parameters(), lr=0.001, momentum=0.9)
 #! criterion = nn.CrossEntropyLoss()
 
@@ -153,19 +145,31 @@ def optimize_model():
         param.grad.data.clamp_(-1, 1)
     optimizer.step()
 
+def get_potential():
+    """get the potential Phi in the current env state
+    """
+    agent_pos = env.agent_pos
+    goal_pos = (8,8)
+    mannh_dist = goal_pos[0] - agent_pos[0] + goal_pos[1] - agent_pos[1]
+    return (-1)*mannh_dist
+
+
 for i_episode in range(NUM_EPISODES):
     state = env.reset()['image']
     for t in count():
         # Select and perform an action
+        f_s = get_potential()
         action = select_action(state)
-        #reward = torch.tensor([reward], device=device)
-        next_state, reward, done, _ = env.step(action.item())
+        next_state, env_reward, done, _ = env.step(action.item())
+        # update the reward:
+        f_s_prime = get_potential()
+        reward = env_reward + (f_s_prime - f_s )
         torch.as_tensor(next_state['image'], dtype=torch.float32)
         memory.push(
             torch.as_tensor(state, dtype=torch.float32),
             action, 
             torch.as_tensor(next_state['image'], dtype=torch.float32), 
-            torch.tensor([reward])
+            torch.tensor([env_reward],dtype=torch.float32)
         ) 
         state = next_state['image']      
         optimize_model() #! optimization for BATCH after a single observation? 
