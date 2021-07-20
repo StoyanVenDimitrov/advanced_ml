@@ -23,10 +23,10 @@ if is_ipython:
     from IPython import display
 
 ENV = "MiniGrid-Empty-8x8-v0" # 'MiniGrid-Empty-5x5-v0'
-NUM_EPISODES = 300
+NUM_EPISODES = 100
 BATCH_SIZE = 64
 GAMMA = 0.999
-EPS_START = 0.9
+EPS_START = 0.1
 EPS_END = 0.05
 EPS_DECAY = 200
 TARGET_UPDATE = 1
@@ -54,9 +54,9 @@ target_net = DQN(n_actions)
 target_net.load_state_dict(policy_net.state_dict())
 target_net.eval()
 
-# optimizer = optim.Adam(policy_net.parameters())
+optimizer = optim.Adam(policy_net.parameters())
 criterion = nn.SmoothL1Loss()
-optimizer = optim.RMSprop(policy_net.parameters())
+# optimizer = optim.RMSprop(policy_net.parameters())
 #! optimizer = optim.SGD(policy_net.parameters(), lr=0.001, momentum=0.9)
 #! criterion = nn.CrossEntropyLoss()
 
@@ -96,11 +96,12 @@ def plot_durations():
         means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
         means = torch.cat((torch.zeros(99), means))
         plt.plot(means.numpy())
-
+    plt.savefig('_env_reward_eps_01.png')
     plt.pause(0.001)  # pause a bit so that plots are updated
     if is_ipython:
         display.clear_output(wait=True)
         display.display(plt.gcf())
+    
 
 def optimize_model():
     if len(memory) < BATCH_SIZE:
