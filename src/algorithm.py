@@ -22,7 +22,7 @@ is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython:
     from IPython import display
 
-ENV = "MiniGrid-Empty-8x8-v0" # 'MiniGrid-Empty-5x5-v0'
+ENV = "MiniGrid-FourRooms-v0" # "MiniGrid-MultiRoom-N2-S4-v0" # 'MiniGrid-Empty-5x5-v0'
 NUM_EPISODES = 100
 BATCH_SIZE = 64
 GAMMA = 0.999
@@ -146,12 +146,32 @@ def optimize_model():
         param.grad.data.clamp_(-1, 1)
     optimizer.step()
 
+# def get_potential():
+#     """get the potential Phi in the current env state
+#         for 8x8 empty grid world
+#     """
+#     agent_pos = env.agent_pos
+#     goal_pos = (8,8)
+#     mannh_dist = goal_pos[0] - agent_pos[0] + goal_pos[1] - agent_pos[1]
+#     return (-1)*mannh_dist
+
 def get_potential():
     """get the potential Phi in the current env state
+        for FourRooms environment
     """
+    walls = [[9,i] for i in range(1,18)] + [[i,9] for i in range(1,18)]
+    walls.remove([9,9])
     agent_pos = env.agent_pos
-    goal_pos = (8,8)
-    mannh_dist = goal_pos[0] - agent_pos[0] + goal_pos[1] - agent_pos[1]
+    for i in range(1,env.grid.width-1):
+        for j in range(1,env.grid.height-1):
+            cell = env.grid.get(i, j)
+            if cell:
+                if cell.type!='goal':
+                    walls.remove([i,j])
+                if cell.type is 'goal':
+                    goal = [i,j]
+            
+    mannh_dist = 0
     return (-1)*mannh_dist
 
 
