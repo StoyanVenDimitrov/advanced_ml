@@ -9,6 +9,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from torch._C import AggregationType
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
@@ -155,11 +156,32 @@ def optimize_model():
 #     mannh_dist = goal_pos[0] - agent_pos[0] + goal_pos[1] - agent_pos[1]
 #     return (-1)*mannh_dist
 
+def _get_dir_to_goal(agent, goal):
+    """get the direction to the goal from the current agent position
+    """
+    directions = []
+    if agent[0]-goal[0]<0:
+        directions.append(0)
+    if agent[0]-goal[0]>0:
+        directions.append(2)
+    
+    if agent[1]-goal[1]<0:
+        directions.append(1)
+    if agent[1]-goal[1]>0:
+        directions.append(3)
+    return directions
+
 def get_potential():
     """get the potential Phi in the current env state
         for FourRooms environment
     """
-    walls = [[9,i] for i in range(1,18)] + [[i,9] for i in range(1,18)]
+    walls = [[i,9] for i in range(1,18)] + [[9,i] for i in range(1,18)]
+    rooms = {
+        1:([0,9],[0,9]), 
+        2:([0,9], [10,18]),
+        3:([10,18], [10,18]),
+        4:([10,18], [0,9])
+    }
     walls.remove([9,9])
     agent_pos = env.agent_pos
     for i in range(1,env.grid.width-1):
@@ -168,11 +190,44 @@ def get_potential():
             if cell:
                 if cell.type!='goal':
                     walls.remove([i,j])
-                if cell.type is 'goal':
-                    goal = [i,j]
-            
-    mannh_dist = 0
-    return (-1)*mannh_dist
+                if cell.type=='goal':
+                    goal = cell.cur_pos
+    doors = {1:walls[0], 2:walls[3], 3:walls[1], 4:walls[2]}
+    directions = _get_dir_to_goal(agent_pos, goal)
+    # consider changes in agent orientation to the value
+    phi = 1 if env.agent_dir in directions else -1
+    # check which doors the agent has to pass 
+    for room in rooms.items(): 
+        # determine agents current room:
+        if room[1][0][0] <= agent_pos[0] <= room[1][0][1] and room[1][1][0] <= agent_pos[1] <= room[1][1][1]:
+            agent_room = room[0]
+        if room[1][0][0] <= goal[0] <= room[1][0][1] and room[1][1][0] <= goal[1] <= room[1][1][1]:
+            goal_room = room[0]
+    if agent_room == goal_room:
+        mannh_dist = abs(goal[0] - agent_pos[0]) + abs(goal[1] - agent_pos[1])
+        return phi + (-1)*mannh_dist
+
+    points = [] 
+    # order doors, goal and agent in a circle:
+    for door in doors.items():
+        if agent_room == door[0]:
+            points.append(agent_pos)
+        if goal_room == door[0]:
+            points.append(goal)
+        points.append(door[1])
+    goal_and_agent = [i for i,el in enumerate(points) if isinstance(el, (np.ndarray) )]
+    traj_1 = points[goal_and_agent[0]: goal_and_agent[1]+1]
+    traj_2 = points[goal_and_agent[1]:] + points[0: goal_and_agent[0]+1]
+    mannh_dist1 = sum([abs(traj_1[i][0]-traj_1[i+1][0])+abs(traj_1[i][1]-traj_1[i+1][1]) for i in range(len(traj_1)-1)])
+    mannh_dist2 = sum([abs(traj_2[i][0]-traj_2[i+1][0])+abs(traj_2[i][1]-traj_2[i+1][1]) for i in range(len(traj_2)-1)])
+    mannh_dist = min(mannh_dist1, mannh_dist2)
+    if mannh_dist==mannh_dist1:
+        next_door = traj_1[1] if (traj_1[0]==agent_pos).all() else traj_1[-2]
+    if mannh_dist==mannh_dist2:
+        next_door = traj_2[1] if (traj_2[0]==agent_pos).all() else traj_2[-2]
+    directions = _get_dir_to_goal(agent_pos, next_door)
+    phi = 1 if env.agent_dir in directions else -1
+    return phi + (-1)*mannh_dist
 
 
 for i_episode in range(NUM_EPISODES):
