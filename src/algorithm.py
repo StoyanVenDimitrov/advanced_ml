@@ -23,8 +23,9 @@ is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython:
     from IPython import display
 
-ENV = "MiniGrid-FourRooms-v0" # "MiniGrid-MultiRoom-N2-S4-v0" # 'MiniGrid-Empty-5x5-v0'
-NUM_EPISODES = 100
+# ENV = 'MiniGrid-Empty-16x16-v0'
+ENV = "MiniGrid-FourRooms-v0" 
+NUM_EPISODES = 300
 BATCH_SIZE = 64
 GAMMA = 0.999
 EPS_START = 0.1
@@ -34,19 +35,22 @@ TARGET_UPDATE = 1
 HIDDEN_STATES = 100
 MEMORY_SIZE = 10000
 
-env = gym.make(ENV).unwrapped
+PLOT_NAME = "four_room_potential_reward"
+SEED = 10 #13
 
+env = gym.make(ENV).unwrapped
+env.max_steps = 300
+env.reset()
 n_actions = env.action_space.n
 n_actions = 3
 
+AGENT_DIR = env.agent_dir
 # ! for flat
 # env = FlatObsWrapper(env)
 # n_states = env.observation_space.shape[0]
 # policy_net = FlatDQN(n_states , HIDDEN_STATES, n_actions)
 # target_net = FlatDQN(n_states , HIDDEN_STATES, n_actions)
 # optimizer = optim.Adam(policy_net.parameters(), lr=0.0002)
-
-env.reset()
 
 memory = ReplayMemory(MEMORY_SIZE)
 
@@ -97,7 +101,7 @@ def plot_durations():
         means = durations_t.unfold(0, 100, 1).mean(1).view(-1)
         means = torch.cat((torch.zeros(99), means))
         plt.plot(means.numpy())
-    plt.savefig('_env_reward_eps_01.png')
+    plt.savefig(f'{PLOT_NAME}_{SEED}.png')
     plt.pause(0.001)  # pause a bit so that plots are updated
     if is_ipython:
         display.clear_output(wait=True)
@@ -147,14 +151,15 @@ def optimize_model():
         param.grad.data.clamp_(-1, 1)
     optimizer.step()
 
-# def get_potential():
-#     """get the potential Phi in the current env state
-#         for 8x8 empty grid world
-#     """
-#     agent_pos = env.agent_pos
-#     goal_pos = (8,8)
-#     mannh_dist = goal_pos[0] - agent_pos[0] + goal_pos[1] - agent_pos[1]
-#     return (-1)*mannh_dist
+def _get_potential():
+    """get the potential Phi in the current env state
+        for 16x16 empty grid world
+    """
+    agent_pos = env.agent_pos
+    goal_pos = (16,16)
+    mannh_dist = goal_pos[0] - agent_pos[0] + goal_pos[1] - agent_pos[1]
+    return (-1)*mannh_dist
+
 
 def _get_dir_to_goal(agent, goal):
     """get the direction to the goal from the current agent position
@@ -170,6 +175,32 @@ def _get_dir_to_goal(agent, goal):
     if agent[1]-goal[1]>0:
         directions.append(3)
     return directions
+
+
+def _get_phi_dir(agent, directions):
+    """get the reward for turning left/right, preserving the potential property
+    We need to add this reward because turning is an additional step in this env
+    Args:
+        directions ([type]): [description]
+    """
+    # when the agent looks in one right direction, no additional move is needed
+    if agent in directions:
+        return 0
+    # when already in the right place, there is no directions; no move needed:
+    if not directions:
+        return 0
+    # when there are two right directions, the agent is max one step away from the right direction
+    if agent not in directions and len(directions)>1:
+        return -1
+    # when there is one right direction:
+    if len(directions)==1:
+        # ... the agent might be two steps away from the right direction
+        if abs(directions[0]-2)==agent or abs(agent-2)==directions[0]:
+            return -2
+        # ... or one step away:
+        if abs(directions[0]-1)==agent or abs(agent-1)==directions[0]:
+            return -1
+    return 0
 
 def get_potential():
     """get the potential Phi in the current env state
@@ -195,7 +226,7 @@ def get_potential():
     doors = {1:walls[0], 2:walls[3], 3:walls[1], 4:walls[2]}
     directions = _get_dir_to_goal(agent_pos, goal)
     # consider changes in agent orientation to the value
-    phi = 1 if env.agent_dir in directions else -1
+    phi = _get_phi_dir(env.agent_dir, directions)
     # check which doors the agent has to pass 
     for room in rooms.items(): 
         # determine agents current room:
@@ -203,6 +234,7 @@ def get_potential():
             agent_room = room[0]
         if room[1][0][0] <= goal[0] <= room[1][0][1] and room[1][1][0] <= goal[1] <= room[1][1][1]:
             goal_room = room[0]
+    # in the goal room, ignore the doors
     if agent_room == goal_room:
         mannh_dist = abs(goal[0] - agent_pos[0]) + abs(goal[1] - agent_pos[1])
         return phi + (-1)*mannh_dist
@@ -226,20 +258,25 @@ def get_potential():
     if mannh_dist==mannh_dist2:
         next_door = traj_2[1] if (traj_2[0]==agent_pos).all() else traj_2[-2]
     directions = _get_dir_to_goal(agent_pos, next_door)
-    phi = 1 if env.agent_dir in directions else -1
+    phi = _get_phi_dir(env.agent_dir, directions)
+
     return phi + (-1)*mannh_dist
 
 
 for i_episode in range(NUM_EPISODES):
+    env.seed(SEED)
+    overall_reward = 0
     state = env.reset()['image']
     for t in count():
         # Select and perform an action
         f_s = get_potential()
         action = select_action(state)
         next_state, env_reward, done, _ = env.step(action.item())
-        # update the reward:
+        # update the reward:    
         f_s_prime = get_potential()
         reward = env_reward + (f_s_prime - f_s )
+        overall_reward += reward
+        # reward = env_reward 
         torch.as_tensor(next_state['image'], dtype=torch.float32)
         memory.push(
             torch.as_tensor(state, dtype=torch.float32),
@@ -249,7 +286,8 @@ for i_episode in range(NUM_EPISODES):
         ) 
         state = next_state['image']      
         optimize_model() #! optimization for BATCH after a single observation? 
-        env.render()
+        if i_episode == NUM_EPISODES-1:
+            env.render()
         if done:
             episode_durations.append(t + 1)
             plot_durations()
@@ -257,9 +295,7 @@ for i_episode in range(NUM_EPISODES):
     # Update the target network
     if i_episode % TARGET_UPDATE == 0:
         target_net.load_state_dict(policy_net.state_dict())
-# Update the target network, copying all weights and biases in DQN
-# if i_episode % TARGET_UPDATE == 0:
-#     target_net.load_state_dict(policy_net.state_dict())
+
 
 print('Complete')
 env.render()
